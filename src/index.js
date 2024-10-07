@@ -2,6 +2,8 @@ import cors from 'cors'
 import dotenv from 'dotenv'
 import express from 'express'
 import { KJUR } from 'jsrsasign'
+import axios from 'axios'
+import qs from 'querystring';  // Used to serialize the body as x-www-form-urlencoded
 import { inNumberArray, isBetween, isRequiredAllOrNone, validateRequest } from './validations.js'
 
 dotenv.config()
@@ -16,8 +18,13 @@ const propValidations = {
   expirationSeconds: isBetween(1800, 172800)
 }
 
-const ZOOM_MEETING_SDK_KEY =  "rsf0GiuaQUeidIuRVkmig";
-const ZOOM_MEETING_SDK_SECRET = "yBYPiclGUi1JGE5xPK42V8rGkrs2OO0Z";
+const ZOOM_MEETING_SDK_KEY = "ripqfBNqQ5e8dSdrWMKpA";
+const ZOOM_MEETING_SDK_SECRET = "J1ODXRNdWSL087mcAApsR0HLSJFdv5Uz";
+//-----------------------------------------
+// const ZOOM_MEETING_SDK_KEY = "p9ZvyOLMT_ihW2e8naMgiQ";
+// const ZOOM_MEETING_SDK_SECRET = "kE8xnneZg1j6Y1lSfw33O0ngD9F8Kl7I";
+
+
 const schemaValidations = [isRequiredAllOrNone(['meetingNumber', 'role'])]
 
 const coerceRequestBody = (body) => ({
@@ -28,9 +35,36 @@ const coerceRequestBody = (body) => ({
   )
 })
 
+const getToken = async () => {
+  const username = "p9ZvyOLMT_ihW2e8naMgiQ";
+  const password = "kE8xnneZg1j6Y1lSfw33O0ngD9F8Kl7I";
+  const authString = Buffer.from(`${username}:${password}`).toString('base64');
+
+  try {
+    const response = await axios.post(
+      'https://zoom.us/oauth/token',
+      qs.stringify({
+        grant_type: 'account_credentials',
+        account_id: 'GP5bgMnFRUGtuzXuEc_RuA'
+      }),
+      {
+        headers: {
+          'Authorization': `Basic ${authString}`,
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      }
+    );
+
+    return response.data; // Ensure the correct data is returned
+
+  } catch (error) {
+    throw error; // Ensure errors are properly propagated
+  }
+};
+
+//-----------------------------------------
 app.post('/', (req, res) => {
   const requestBody = coerceRequestBody(req.body)
-  console.log('Request Body:', requestBody)
   const validationErrors = validateRequest(requestBody, propValidations, schemaValidations)
 
   if (validationErrors.length > 0) {
@@ -56,5 +90,67 @@ app.post('/', (req, res) => {
   const sdkJWT = KJUR.jws.JWS.sign('HS256', sHeader, sPayload, ZOOM_MEETING_SDK_SECRET);
   return res.json({ signature: sdkJWT })
 })
+
+//--------------------------------------------
+app.post('/creareMeeting', async(req, res) => {
+  // get token from api  https://zoom.us/oauth/token?grant_type=account_credentials&account_id=GP5bgMnFRUGtuzXuEc_RuA post
+
+  let token = "";
+  try {
+    const response = await getToken();
+    token = response.access_token;
+    console.log("Response from getToken:", response.access_token);
+  } catch (error) {
+    console.error("Error in creating token:", error);
+  }
+  // const requestBody = req.body
+
+  const requestBody = {
+    topic: "zoom1",
+    type: 2,
+    start_time: "2024-09-19T10:00:00",
+    duration: 60,
+    timezone: "Africa/Cairo",
+    password: "123456",
+    agenda: "testing",
+    settings: {
+      host_video: true,
+      participant_video: true,
+      join_before_host: true,
+      mute_upon_entry: true,
+      breakout_room: {
+        enable: true,
+      },
+    }
+  }
+
+  axios.post('https://api.zoom.us/v2/users/me/meetings', requestBody, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+  })
+    .then(response => {
+      return res.json({ response: response.data })
+    })
+    .catch(error => {
+      console.log("error :: ", error.response.data);
+      return res.json({ error: error.response.data });
+    })
+})
+
+
+
+/// --------------------------------------------------
+app.post('/createToken', async (req, res) => {
+  try {
+    const response = await getToken();
+    console.log("Response from getToken:", response);
+    return res.json({ response });
+  } catch (error) {
+    console.error("Error in creating token:", error);
+    return res.status(500).json({ error: 'Failed to create token' });
+  }
+});
 
 app.listen(port, () => console.log(`Zoom Meeting SDK Auth Endpoint Sample Node.js, listening on port ${port}!`))
